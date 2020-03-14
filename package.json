@@ -1,0 +1,37 @@
+{
+  "name": "bollocks-binder",
+  "version": "1.0.0",
+  "files": [
+    "./docs/latest",
+    "README.md"
+  ],
+  "main": "./docs/latest/bollocks.js",
+  "types": "./docs/latest/Bollocks.d.ts",
+  "scripts": {
+    "start": "webpack-dev-server -d --open",
+    "build": "webpack -p"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ama-shock/bollocks-binder.git"
+  },
+  "author": "Ama-shock",
+  "license": "The Unlicense",
+  "description": "",
+  "keywords": [
+    "bollocks",
+    "custom elements"
+  ],
+  "bugs": {
+    "url": "https://github.com/Ama-shock/bollocks-binder/issues"
+  },
+  "homepage": "https://github.com/Ama-shock/bollocks-binder#readme",
+  "devDependencies": {
+    "path": "^0.12.7",
+    "ts-loader": "^6.2.1",
+    "typescript": "^3.8.3",
+    "webpack": "^4.36.1",
+    "webpack-cli": "^3.3.6",
+    "webpack-dev-server": "^3.7.2"
+  }
+}
