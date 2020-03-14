@@ -14,7 +14,7 @@ declare global {
 }
 
 function setupBollocks(self: typeof window){
-    if(self?.Bollocks) return;
+    if(self.Bollocks) return;
     if(!self.document.head) return;
 
     function propName<E extends Element>(element: E, attrName: string){
@@ -25,23 +25,33 @@ function setupBollocks(self: typeof window){
         return lower as keyof E & string;
     }
 
-    interface Binded {
-        [key: string] : {
-            prop: string;
-            value: any;
-        }
-    }
     const binded = Symbol(':-binded');
-    function syncProp<E extends Element>(el: E, bind: any){
-        const prev = (el as any)[binded] || {} as Binded;
-        const next = (el as any)[binded] = {} as Binded;
+    const attributes = Symbol(':-attributes');
+    type BindedElement<E extends Element> = E & {
+        [binded]: {bollocks: Bollocks, index: number}|null;
+        [attributes]: {[attr: string]: keyof E & string|null}
+    };
+    
+    function syncProp<E extends Element>(element: E){
+        const el = element as BindedElement<E>;
+        if(!el[binded]) return false;
+        const bollocks = el[binded]!.bollocks; 
+        const index = el[binded]!.index; 
+        const bind = bollocks.multiple && (Symbol.iterator in bollocks.bind) ?
+                bollocks.bind[index]:
+                bollocks.bind;
         if(bind == null) return false;
-        let available = false;
-        for(let attr of el.getAttributeNames()){
-            if(!attr.startsWith(':-')) continue;
-            available = true;
+        const prev = bollocks['@previous'][index];
+        if(!(el as any)[attributes]) return false;
+        for(let attr in el[attributes]){
+            if(!el.hasAttribute(attr)){
+                delete el[attributes][attr];
+                continue;
+            }
+            const newly = !el[attributes][attr];
+            if(newly) el[attributes][attr] = propName(el, attr);
             const key = el.getAttribute(attr);
-            const prop = propName(el, attr);
+            const prop = el[attributes][attr]!;
             const propDesc = Object.getOwnPropertyDescriptor(el, prop)!;
             const imutable = propDesc && !propDesc.writable && !propDesc.set;
             if(!key){
@@ -51,8 +61,7 @@ function setupBollocks(self: typeof window){
             
             const referSelf = (key === ':-');
             let value = referSelf ? bind : bind[key];
-            const changed = (value !== prev[key]?.value);
-            next[key] = { prop, value };
+            const changed = (value !== prev[key]);
 
             if(attr === ":-"){
                 if(!referSelf) bind[key] = el;
@@ -62,17 +71,16 @@ function setupBollocks(self: typeof window){
                 if(changed) el[prop] = value.bind(bind);
                 continue;
             }
-            if(!changed && !referSelf && value != el[prop]){
+
+            if(!newly && !changed && !referSelf && value != el[prop]){
                 value = bind[key] = el[prop];
             }
             if(!imutable){
-                if(el[prop] != value){
-                    el[prop] = value;
-                }
+                if(el[prop] != value) el[prop] = value;
                 if(!referSelf && bind[key] != el[prop]) bind[key] = el[prop];
             }
         }
-        return available;
+        if(!Object.keys(el[attributes]).length) delete el[attributes];
     }
 
     function isBollocks(node: Node|null): node is Bollocks{
@@ -80,38 +88,22 @@ function setupBollocks(self: typeof window){
         if(!view?.Bollocks) return false;
         return node instanceof view.Bollocks;
     }
-    function getBind(el: Element){
-        while(el){
-            const view = el.ownerDocument?.defaultView;
-            if(!view) return null;
-            if(isBollocks(el.parentElement)) {
-                const bollocks = el.parentElement;
-                if(bollocks.multiple && (Symbol.iterator in bollocks.bind)){
-                    const idx = bollocks[documents].findIndex(doc=>doc.has(el));
-                    return bollocks.bind[idx];
-                }
-                return bollocks.bind;
-            }
-            el = el.parentElement || view.frameElement;
-        }
-        return null;
-    }
     function render(element: Element){
-        if(!element.isConnected){
-            renderList.delete(element);
+        const el = element as BindedElement<Element>;
+        if(!el.isConnected){
+            renderList.delete(el);
             return;
         }
-        const data = getBind(element);
-        const hasAttr = syncProp(element, data);
-        if(isBollocks(element)){
-            applyTemplate(element);
+        syncProp(el);
+        if(isBollocks(el)){
+            applyTemplate(el);
             return;
         }
-        if(isSameOriginFrame(element)){
-            element.contentWindow?.Bollocks?.render();
+        if(isSameOriginFrame(el)){
+            el.contentWindow?.Bollocks?.render();
             return;
         }
-        if(!hasAttr) renderList.delete(element);
+        if(!el[attributes]) renderList.delete(el);
     }
 
     const documents = Symbol(':-documents');
@@ -120,6 +112,7 @@ function setupBollocks(self: typeof window){
         if(bollocks.bind == null){
             while(bollocks.firstChild) bollocks.removeChild(bollocks.firstChild);
             bollocks[documents] = [];
+            bollocks['@previous'] = [];
             return;
         }
         const bindList = bollocks.multiple && (Symbol.iterator in bollocks.bind) ?
@@ -127,10 +120,12 @@ function setupBollocks(self: typeof window){
                 [bollocks.bind] as T[];
 
         while(bollocks[documents].length > bindList.length){
+            bollocks['@previous'].pop();
             const nodes = bollocks[documents].pop()!;
             nodes.forEach(node=>bollocks.removeChild(node));
         }
         while(bollocks[documents].length < bindList.length){
+            bollocks['@previous'].push(Object.assign({}, bindList[bollocks['@previous'].length]));
             const fragment = document.importNode(bollocks.content, true);
             bollocks[documents].push(new Set(fragment.children));
             bollocks.appendChild(fragment);
@@ -162,16 +157,40 @@ function setupBollocks(self: typeof window){
     }
     if(self.parent === self || !self.parent.Bollocks) renderLoop();
 
+    function getBind(el: Element){
+        while(el){
+            const view = el.ownerDocument?.defaultView;
+            if(!view) return null;
+            if(isBollocks(el.parentElement)) {
+                const bollocks = el.parentElement;
+                if(bollocks.multiple && (Symbol.iterator in bollocks.bind)){
+                    const index = bollocks[documents].findIndex(doc=>doc.has(el));
+                    return {bollocks, index};
+                }
+                return { bollocks, index: 0};
+            }
+            el = el.parentElement || view.frameElement;
+        }
+        return null;
+    }
+    function addRenderList(node: Element){
+        const el = node as BindedElement<Element>;
+        for(let attr of el.getAttributeNames()){
+            if(!attr.startsWith(':-')) continue;
+            if(!el[attributes]) el[attributes] = {};
+            if(!el[attributes][attr]) el[attributes][attr] = null;
+        }
+        if(!el[attributes]) return false;
+        renderList.add(el);
+        if(!el[binded]) el[binded] = getBind(el);
+        return true;
+    }
+
     function digObserveElements(nodes: NodeList){
         for(let node of nodes){
             if('attributes' in node){
                 const el = node as Element;
-                for(let attr of el.getAttributeNames()){
-                    if(attr.startsWith(':-')){
-                        renderList.add(el);
-                        break;
-                    }
-                }
+                addRenderList(el);
                 digObserveElements(el.childNodes);
             }
         }
@@ -192,7 +211,7 @@ function setupBollocks(self: typeof window){
             switch(rec.type){
                 case 'attributes':
                     if(rec.attributeName?.startsWith(':-')){
-                        renderList.add(rec.target as Element);
+                        addRenderList(rec.target as Element);
                     }
                     continue;
                 case 'childList':
@@ -207,6 +226,7 @@ function setupBollocks(self: typeof window){
         childList: true,
         subtree: true
     });
+    digObserveElements(self.document.childNodes);
 
     class Bollocks<T = any> extends self.HTMLTemplateElement {
         static get update(): Promise<void>{
@@ -216,6 +236,17 @@ function setupBollocks(self: typeof window){
         }
         static render(){
             renderList.forEach(el=>render(el));
+            renderList.forEach(bollocks=>{
+                if(bollocks instanceof Bollocks && bollocks.bind != null){
+                    const bindList = bollocks.multiple && (Symbol.iterator in bollocks.bind) ?
+                            bollocks.bind as any[]:
+                            [bollocks.bind];
+                    
+                    for(let i = 0; i < bindList.length; i++){
+                        bollocks['@previous'][i] = Object.assign({}, bindList[i]);
+                    }
+                }
+            });
         }
         
         connectedCallback(){
@@ -248,6 +279,7 @@ function setupBollocks(self: typeof window){
             else this.removeAttribute('multiple');
         }
         bind?: T|ArrayLike<T> = undefined;
+        '@previous' = [] as T[];
         [documents] = [] as Set<Element>[];
     }
 
