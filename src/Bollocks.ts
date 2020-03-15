@@ -1,15 +1,17 @@
-interface Bollocks {
+interface Bollocks extends HTMLTemplateElement {
     bind?: any;
     multiple: boolean;
 }
+interface BollocksConstructor {
+    new (): Bollocks;
+    render(): void;
+    readonly update: Promise<void>;
+}
 
 declare global {
-    interface Window {
-        Bollocks?: {
-            new (): Bollocks;
-            render(): void;
-            readonly update: Promise<void>;
-        }
+    export const Bollocks: BollocksConstructor|undefined;
+    export interface Window {
+        Bollocks?: BollocksConstructor;
     }
 }
 
@@ -29,7 +31,13 @@ function setupBollocks(self: typeof window){
     const attributes = Symbol(':-attributes');
     type BindedElement<E extends Element> = E & {
         [binded]: {bollocks: Bollocks, index: number}|null;
-        [attributes]: {[attr: string]: keyof E & string|null}
+        [attributes]: {
+            [attr: string]: {
+                prop: keyof E & string,
+                key: string|null,
+                value?: any
+            } | null
+        }
     };
     
     function syncProp<E extends Element>(element: E){
@@ -41,41 +49,40 @@ function setupBollocks(self: typeof window){
                 bollocks.bind[index]:
                 bollocks.bind;
         if(bind == null) return false;
-        const prev = bollocks['@previous'][index];
         if(!(el as any)[attributes]) return false;
         for(let attr in el[attributes]){
             if(!el.hasAttribute(attr)){
                 delete el[attributes][attr];
                 continue;
             }
-            const newly = !el[attributes][attr];
-            if(newly) el[attributes][attr] = propName(el, attr);
+            const prevState = el[attributes][attr];
             const key = el.getAttribute(attr);
-            const prop = el[attributes][attr]!;
+            const prop = prevState ? prevState.prop : propName(el, attr);
             const propDesc = Object.getOwnPropertyDescriptor(el, prop)!;
             const imutable = propDesc && !propDesc.writable && !propDesc.set;
+            const state = el[attributes][attr] = { prop, key, value: null as any };
             if(!key){
                 if(!imutable) el[prop] = null as any;
                 continue;
             }
             
             const referSelf = (key === ':-');
-            let value = referSelf ? bind : bind[key];
-            const changed = (value !== prev[key]);
+            const value = state.value = referSelf ? bind : bind[key];
+            const bindChanged = !prevState || state.value !== prevState.value;
 
             if(attr === ":-"){
                 if(!referSelf) bind[key] = el;
                 continue;
             }
             if(typeof value === "function"){
-                if(changed) el[prop] = value.bind(bind);
+                if(bindChanged) el[prop] = value.bind(bind);
                 continue;
             }
-
-            if(!newly && !changed && !referSelf && value != el[prop]){
-                value = bind[key] = el[prop];
+            if(!bindChanged && !referSelf && value != el[prop]){
+                state.value = bind[key] = el[prop];
             }
             if(!imutable){
+                const value = referSelf ? bind : bind[key];
                 if(el[prop] != value) el[prop] = value;
                 if(!referSelf && bind[key] != el[prop]) bind[key] = el[prop];
             }
@@ -84,9 +91,7 @@ function setupBollocks(self: typeof window){
     }
 
     function isBollocks(node: Node|null): node is Bollocks{
-        const view = node?.ownerDocument?.defaultView as Window;
-        if(!view?.Bollocks) return false;
-        return node instanceof view.Bollocks;
+        return node?.constructor.name == 'Bollocks';
     }
     function render(element: Element){
         const el = element as BindedElement<Element>;
@@ -106,28 +111,24 @@ function setupBollocks(self: typeof window){
         if(!el[attributes]) renderList.delete(el);
     }
 
-    const documents = Symbol(':-documents');
     function applyTemplate<T>(bollocks: Bollocks<T>){
         if(document.readyState == 'loading')  return;
         if(bollocks.bind == null){
             while(bollocks.firstChild) bollocks.removeChild(bollocks.firstChild);
-            bollocks[documents] = [];
-            bollocks['@previous'] = [];
+            bollocks['@documents'] = [];
             return;
         }
         const bindList = bollocks.multiple && (Symbol.iterator in bollocks.bind) ?
                 bollocks.bind as T[]:
                 [bollocks.bind] as T[];
 
-        while(bollocks[documents].length > bindList.length){
-            bollocks['@previous'].pop();
-            const nodes = bollocks[documents].pop()!;
+        while(bollocks['@documents'].length > bindList.length){
+            const nodes = bollocks['@documents'].pop()!;
             nodes.forEach(node=>bollocks.removeChild(node));
         }
-        while(bollocks[documents].length < bindList.length){
-            bollocks['@previous'].push(Object.assign({}, bindList[bollocks['@previous'].length]));
+        while(bollocks['@documents'].length < bindList.length){
             const fragment = document.importNode(bollocks.content, true);
-            bollocks[documents].push(new Set(fragment.children));
+            bollocks['@documents'].push(new Set(fragment.children));
             bollocks.appendChild(fragment);
         }
     }
@@ -164,7 +165,7 @@ function setupBollocks(self: typeof window){
             if(isBollocks(el.parentElement)) {
                 const bollocks = el.parentElement;
                 if(bollocks.multiple && (Symbol.iterator in bollocks.bind)){
-                    const index = bollocks[documents].findIndex(doc=>doc.has(el));
+                    const index = bollocks['@documents'].findIndex(doc=>doc.has(el));
                     return {bollocks, index};
                 }
                 return { bollocks, index: 0};
@@ -236,17 +237,6 @@ function setupBollocks(self: typeof window){
         }
         static render(){
             renderList.forEach(el=>render(el));
-            renderList.forEach(bollocks=>{
-                if(bollocks instanceof Bollocks && bollocks.bind != null){
-                    const bindList = bollocks.multiple && (Symbol.iterator in bollocks.bind) ?
-                            bollocks.bind as any[]:
-                            [bollocks.bind];
-                    
-                    for(let i = 0; i < bindList.length; i++){
-                        bollocks['@previous'][i] = Object.assign({}, bindList[i]);
-                    }
-                }
-            });
         }
         
         connectedCallback(){
@@ -257,7 +247,7 @@ function setupBollocks(self: typeof window){
         disconnectedCallback(){
             renderList.delete(this);
             while(this.firstChild) this.removeChild(this.firstChild);
-            this[documents] = [];
+            this['@documents'] = [];
         }
 
         static get observedAttributes(){
@@ -279,8 +269,7 @@ function setupBollocks(self: typeof window){
             else this.removeAttribute('multiple');
         }
         bind?: T|ArrayLike<T> = undefined;
-        '@previous' = [] as T[];
-        [documents] = [] as Set<Element>[];
+        '@documents' = [] as Set<Element>[];
     }
 
     const style = self.document.createElement('style');
@@ -290,4 +279,4 @@ function setupBollocks(self: typeof window){
     Object.defineProperty(self, 'Bollocks', { value: Bollocks });
 };
 setupBollocks(self);
-export default self.Bollocks;
+export default self.Bollocks as BollocksConstructor;

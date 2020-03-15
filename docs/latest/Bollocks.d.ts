@@ -1,19 +1,17 @@
-interface Bollocks {
+interface Bollocks extends HTMLTemplateElement {
     bind?: any;
     multiple: boolean;
 }
-declare global {
-    interface Window {
-        Bollocks?: {
-            new (): Bollocks;
-            render(): void;
-            readonly update: Promise<void>;
-        };
-    }
-}
-declare const _default: {
+interface BollocksConstructor {
     new (): Bollocks;
     render(): void;
     readonly update: Promise<void>;
-} | undefined;
+}
+declare global {
+    export const Bollocks: BollocksConstructor | undefined;
+    export interface Window {
+        Bollocks?: BollocksConstructor;
+    }
+}
+declare const _default: BollocksConstructor;
 export default _default;

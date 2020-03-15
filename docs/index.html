@@ -1,0 +1,71 @@
+<html>
+    <head>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.10/styles/vs.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.10/highlight.min.js"></script>
+        <style>
+            .hljs {
+                margin: .5em;
+                background: lightgray;
+            }
+        </style>
+        <script src='./latest/bollocks.js'></script>
+        <script>
+            async function appendBollocks(script, htmlUrl, data){
+                const response = await fetch(htmlUrl);
+                const html = await response.text();
+
+                const section = document.createElement('section');
+
+                const htmlCode = document.createElement('code');
+                htmlCode.innerText = html;
+                htmlCode.className = 'html';
+                hljs.highlightBlock(htmlCode);
+                
+                const jsonCode = document.createElement('code');
+                jsonCode.innerText = data;
+                jsonCode.className = 'javascript';
+                hljs.highlightBlock(jsonCode);
+
+                const pre = document.createElement('pre');
+                pre.appendChild(htmlCode);
+                pre.appendChild(jsonCode);
+                section.appendChild(pre);
+
+                const bollocks = new Bollocks();
+                bollocks.bind = eval('('+ data +')');
+                bollocks.innerHTML = html;
+                section.appendChild(bollocks);
+
+                script.parentNode.insertBefore(section, script.nextSibling);
+            }
+        </script>
+    </head>
+    <body>
+<script>
+appendBollocks(
+    document.currentScript,
+    '/demo/demo.html',
+`{
+    title: 'BindedTitle',
+    html: \`
+    <body>
+        <template is="bollocks-binder" :-bind="sub">
+            <p>Length: <span :-innerText="length"></span></p>
+            <ul>
+                <template is="bollocks-binder" multiple :-bind=":-">
+                    <li :-innerText=":-"></li>
+                </template>
+            </ul>
+        </template>
+    <body>\`,
+    input: 'default',
+    add: function(){ this.sub.push(this.input); },
+    sub: [
+        'paragraphText1',
+        'paragraphText2'
+    ]
+}`);
+</script>
+
+    </body>
+</html>
