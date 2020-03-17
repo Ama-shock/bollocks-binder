@@ -1,14 +1,16 @@
-interface Bollocks extends HTMLTemplateElement {
-    bind?: any;
-    multiple: boolean;
-}
-interface BollocksConstructor {
-    new (): Bollocks;
-    render(): void;
-    readonly update: Promise<void>;
-}
+setupBollocks(self);
+export default {};
 
 declare global {
+    interface BollocksConstructor {
+        new (): Bollocks;
+        render(): void;
+        readonly update: Promise<void>;
+    }
+    export interface Bollocks extends HTMLTemplateElement {
+        bind?: any;
+        multiple: boolean;
+    }
     export const Bollocks: BollocksConstructor|undefined;
     export interface Window {
         Bollocks?: BollocksConstructor;
@@ -278,5 +280,3 @@ function setupBollocks(self: typeof window){
     self.customElements.define('bollocks-binder', Bollocks, { extends: 'template' });
     Object.defineProperty(self, 'Bollocks', { value: Bollocks });
 };
-setupBollocks(self);
-export default self.Bollocks as BollocksConstructor;
